@@ -2,8 +2,63 @@ import os
 import numpy as np
 import torch
 import shutil
+import sys
+import random
 import torchvision.transforms as transforms
 from torch.autograd import Variable
+from PIL import Image
+from torch.utils.data import Dataset, DataLoader
+
+if sys.version_info[0] == 2:
+    import cPickle as pickle
+else:
+    import pickle
+
+class CustomDataset(Dataset):
+    def __init__(self,root,dataset,train=True,transform=None,target_transform=None):
+        self.data=[]
+        self.targets=[]
+        self.transform=transform
+        self.target_transform=target_transform
+
+
+        base_folder = 'cifar-10-batches-py'
+        if train==True:
+            filepath=os.path.join(root,dataset)
+        else:
+            filepath=os.path.join(root,base_folder,'test_batch')
+
+        if not os.path.exists(filepath):
+            raise RuntimeError('Dataset not found')
+
+        with open(filepath,'rb') as f:
+            if sys.version_info[0] == 2:
+                entry = pickle.load(f)
+            else:
+                entry = pickle.load(f, encoding='latin1')
+            self.data.append(entry['data'])
+            if 'labels' in entry:
+                self.targets.extend(entry['labels'])
+            else:
+                self.targets.extend(entry['fine_labels'])          
+        self.data = np.vstack(self.data).reshape(-1, 3, 32, 32)
+        self.data = self.data.transpose((0, 2, 3, 1))  # convert to HWC
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self,index):
+        img,target=self.data[index],self.targets[index]
+        img=Image.fromarray(img)
+
+        if self.transform is not None:
+            img = self.transform(img)
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return img, target
+
 
 
 class AvgrageMeter(object):
@@ -144,6 +199,9 @@ def _data_transforms_FashionMNIST(args):
 
   return train_transform, valid_transform
 
+# named_parameters() method does not look for all objects that are contained in your model, 
+# just the nn.Modules and nn.Parameters, so as I stated above, if you store you parameters 
+#outsite of these, then they won’t be detected by named_parameters().
 
 def count_parameters_in_MB(model):
   return np.sum(np.prod(v.size()) for name, v in model.named_parameters() if "auxiliary" not in name)/1e6
