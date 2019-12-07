@@ -33,14 +33,31 @@ class CIFARGenerator():
 
     def __init__(self,root):
         self.root=root
-        self.data=[]
-        self.targets=[]
-        self.indexs=[]
+        self.train_data=[]
+        self.train_targets=[]
+        self.train_indexs=[]
+        self.train_dataset=dict()
+        self.train_meta=dict()
 
-        self.dataset=dict()
-        self.meta=dict()
-        # read all training data
-        for file_name in train_list:
+        self.test_data=[]
+        self.test_targets=[]
+        self.test_indexs=[]
+        self.test_dataset=dict()
+        self.test_meta=dict()
+        
+        self.load(self.train_data,self.train_targets,self.train_indexs,train=True)
+        self.load(self.test_data,self.test_targets,self.test_indexs,train=False)
+
+    def load(self,datahandle,targethandle,indexhandle,train=True):
+
+        file_list=[]
+        if train==True:
+            file_list=train_list
+        else:
+            file_list=test_list        
+
+
+        for file_name in file_list:
             file_path=os.path.join(self.root,self.base_folder,file_name)
             with open(file_path,'rb') as f:
                 if sys.version_info[0] == 2:
@@ -48,43 +65,42 @@ class CIFARGenerator():
                 else:
                     entry = pickle.load(f, encoding='latin1')
                 self.entry=entry
-                self.data.append(entry['data'])
+                datahandle.append(entry['data'])
                 if 'labels' in entry:
-                    self.targets.extend(entry['labels'])
+                    targethandle.extend(entry['labels'])
                 else:
-                    self.targets.extend(entry['fine_labels'])
-        self.data = np.vstack(self.data)
+                    targethandle.extend(entry['fine_labels'])
+        if train==True:
+            self.train_data=np.vstack(datahandle)
+        else:
+            self.test_data=np.vstack(datahandle)
 
-        #split data into correspoding categories
-        self.num_class=len(np.unique(self.targets))
+        self.num_class=len(np.unique(targethandle))
 
         for cla in range(self.num_class):
-            index=[i for i,x in enumerate(self.targets) if x==cla]
-            self.indexs.append(index)
+            index=[i for i,x in enumerate(targethandle) if x==cla]
+            indexhandle.append(index)
 
 
 
-        # todo sample
-        #self.data = self.data.transpose((0, 2, 3, 1))
-        # self.data         50000*3072 numpy array
-        # self.targets      50000 list
-
-    def generate(self,filename):
+    def generateDistribution(self,filename):
+        self.train_dataset=dict()
+        self.train_meta=dict()
         self.filename=filename
         data_index=[]
         label=[]
-        instace=[]
+        instance=[]
         nInstance=0
 
         r=np.random.rand(self.num_class)
 
         for cla,portion in enumerate(r):
-            num=int(portion*len(self.indexs[cla]))
-            s=random.sample(self.indexs[cla],num)
+            num=int(portion*len(self.train_indexs[cla]))
+            s=random.sample(self.train_indexs[cla],num)
             data_index.extend(s)
             label.extend([cla]*num)
 
-            instace.append(num)
+            instance.append(num)
             nInstance=nInstance+num
 
         randnum=random.randint(0,100)
@@ -93,36 +109,97 @@ class CIFARGenerator():
         random.seed(randnum)
         random.shuffle(label)
 
-        self.dataset['data']=self.data[data_index]
-        self.dataset['labels']=label
+        self.train_dataset['data']=self.train_data[data_index]
+        self.train_dataset['labels']=label
 
         print("-------------------Generate Dataset %s------------------"%self.filename)
         print("#Classes %d"%self.num_class)
         print("#Instance %d"%nInstance)
         for cla in range(self.num_class):
-            print('class %d: %d'%(cla,instace[cla]))
+            print('class %d: %d'%(cla,instance[cla]))
 
         self.meta['num_class']=self.num_class
-        self.meta['num_per_class']=instace
+        self.meta['num_per_class']=instance
+        self.dump(self.root)
 
-        self.dump()
 
-        self.dataset=dict()
-        self.meta=dict()
+    def selectClass(self,chosen_class,datasethandle,datahandle,indexhandle,metahandle,train=True):
+        if train==True:
+            self.filename='train'
+        else:
+            self.filename='test'
 
-    def dump(self):
-        file_path=os.path.join(self.root,self.filename)
+        data_index=[]
+        label=[]
+        instance=[]
+        nInstance=0
+
+        num_class=len(chosen_class)
+
+        for i,cla in enumerate(chosen_class):
+            num=len(indexhandle[cla])
+            data_index.extend(indexhandle[cla])
+            label.extend([i]*num)
+            instance.append(num)
+            nInstance=nInstance+num
+
+        randnum=random.randint(0,100)
+        random.seed(randnum)
+        random.shuffle(data_index)
+        random.seed(randnum)
+        random.shuffle(label)
+
+        datasethandle['data']=datahandle[data_index]
+        datasethandle['labels']=label
+
+        if train==True:
+            print("-------------------Generate Dataset %s------------------"%self.filename)
+            print("#Classes %d"%num_class)
+            print("#Instance %d"%nInstance)
+            for cla in range(num_class):
+                print('class %d: %d'%(cla,instance[cla]))
+
+            metahandle['num_class']=self.num_class
+            metahandle['num_per_class']=instance
+
+        #dump training data
+        dir_path=os.path.join(self.root,'CIFAR_'+str(num_class)+'Class')
+        if not os.path.exists(dir_path):
+            os.mkdir(dir_path)
+
+        self.dump(root=dir_path,train=train)
+
+
+    def generateClass(self,num_class):    # num_class 表示模板class的个数
+        chosen_class=random.sample(list(range(self.num_class)),num_class)
+        print('original class ',chosen_class)
+        self.train_dataset=dict()
+        self.test_dataset=dict()
+        self.train_meta=dict()
+        self.test_meta=dict()
+
+        self.selectClass(chosen_class,self.train_dataset,self.train_data,self.train_indexs,self.train_meta,train=True)
+        self.selectClass(chosen_class,self.test_dataset,self.test_data,self.test_indexs,self.test_meta,train=False)
+
+
+
+    def dump(self,root,train=True,meta=False):
+        file_path=os.path.join(root,self.filename)       
         fw=open(file_path,'wb')
-        pickle.dump(self.dataset,fw,-1)
+        if train==True:
+            pickle.dump(self.train_dataset,fw,-1)
+        else:
+            pickle.dump(self.test_dataset,fw,-1)
 
-        file_path=os.path.join(self.root,self.filename+'.meta')
-        fw=open(file_path,'wb')
-        pickle.dump(self.meta,fw,-1)      
+        if meta==True:
+            file_path=os.path.join(root,self.filename+'.meta')
+            fw=open(file_path,'wb')
+            pickle.dump(self.meta,fw,-1)      
 
 
 gen=CIFARGenerator('data')
-for i in range(1,6):
-    gen.generate('CIFAR'+str(i))
+for i in range(4,9):
+    gen.generateClass(i)
 
 
 

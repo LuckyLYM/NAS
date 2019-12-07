@@ -23,13 +23,22 @@ class CustomDataset(Dataset):
 
 
         base_folder = 'cifar-10-batches-py'
-        if train==True:
-            filepath=os.path.join(root,dataset)
-        else:
-            filepath=os.path.join(root,base_folder,'test_batch')
 
-        if not os.path.exists(filepath):
+        path=os.path.join(root,dataset)
+        if not os.path.exists(path):
             raise RuntimeError('Dataset not found')
+
+
+        if not os.path.isdir(path):
+            if train==True:
+                filepath=path
+            else:
+                filepath=os.path.join(root,base_folder,'test_batch')
+        else:
+            if train==True:
+                filepath=os.path.join(path,'train')
+            else:
+                filepath=os.path.join(path,'test')
 
         with open(filepath,'rb') as f:
             if sys.version_info[0] == 2:
